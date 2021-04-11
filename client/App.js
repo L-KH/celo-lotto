@@ -1,182 +1,226 @@
-import React from 'react'
-import './global'
-import { web3, kit } from './root'
-import { Image, StyleSheet, Text, TextInput, Button, View, YellowBox } from 'react-native'
-import {   
+import React from "react";
+import "./global";
+import { web3, kit } from "./root";
+import CountDown from 'react-native-countdown-component';
+import moment from 'moment';
+import {
+  StyleSheet,
+  Text,
+  Image,
+  Button,
+  View,
+  YellowBox,
+  ScrollView,
+} from "react-native";
+
+import {
   requestTxSig,
   waitForSignedTxs,
   requestAccountAddress,
   waitForAccountAuth,
-  FeeCurrency
-} from '@celo/dappkit'
-import { toTxResult } from "@celo/connect"
-import * as Linking from 'expo-linking'
-import HelloWorldContract from './contracts/HelloWorld.json'
+  FeeCurrency,
+} from "@celo/dappkit";
+import { toTxResult } from "@celo/connect";
+import * as Linking from "expo-linking";
+import Lottery from "./contracts/Lottery.json";
 
-
-YellowBox.ignoreWarnings(['Warning: The provided value \'moz', 'Warning: The provided value \'ms-stream'])
+YellowBox.ignoreWarnings([
+  "Warning: The provided value 'moz",
+  "Warning: The provided value 'ms-stream",
+]);
 
 export default class App extends React.Component {
-
-  // Set the defaults for the state
   state = {
-    address: 'Not logged in',
-    phoneNumber: 'Not logged in',
-    cUSDBalance: 'Not logged in',
-    helloWorldContract: {},
-    contractName: '',
-    textInput: ''
-  }
-
-  // This function is called when the page successfully renders
+    address: "address",
+    manager: "manager",
+    celoBalance: '...',
+    cUSDBalance: "...",
+    pool: "...",
+    Lottery: {},
+    Players: "0",
+    totalDuration: '3600',
+  };
   componentDidMount = async () => {
-    
-    // Check the Celo network ID
     const networkId = await web3.eth.net.getId();
-    
-    // Get the deployed HelloWorld contract info for the appropriate network ID
-    const deployedNetwork = HelloWorldContract.networks[networkId];
-
-    // Create a new contract instance with the HelloWorld contract info
+    const deployedNetwork = Lottery.networks[networkId];
     const instance = new web3.eth.Contract(
-      HelloWorldContract.abi,
+      Lottery.abi,
       deployedNetwork && deployedNetwork.address
     );
-
-    // Save the contract instance
-    this.setState({ helloWorldContract: instance })
-  }
+    this.setState({ Lottery: instance });
+  };
 
   login = async () => {
-    
-    // A string you can pass to DAppKit, that you can use to listen to the response for that request
-    const requestId = 'login'
-    
-    // A string that will be displayed to the user, indicating the DApp requesting access/signature
-    const dappName = 'Hello Celo'
-    
-    // The deeplink that the Celo Wallet will use to redirect the user back to the DApp with the appropriate payload.
-    const callback = Linking.makeUrl('/my/path')
-  
-    // Ask the Celo Alfajores Wallet for user info
+    const requestId = "login";
+    const dappName = "Celo Lottery";
+    const callback = Linking.makeUrl("/my/path");
     requestAccountAddress({
       requestId,
       dappName,
       callback,
-    })
+    });
+    const dappkitResponse = await waitForAccountAuth(requestId);
+    kit.defaultAccount = dappkitResponse.address;
+    const stableToken = await kit.contracts.getStableToken();
+    const cUSDBalanceBig = await stableToken.balanceOf(kit.defaultAccount);
+    let balance = await kit.web3.eth.getBalance(dappkitResponse.address)
+    let poolbalance = await kit.web3.eth.getBalance(this.state.Lottery.options.address)
+    let cUSDBalance = cUSDBalanceBig.toString();
+    let list = await this.state.Lottery.methods.getPlayers().call();
+    let manag = await this.state.Lottery.methods.manager().call();
+    this.setState({
+      cUSDBalance: cUSDBalance,
+      celoBalance: balance,
+      pool: poolbalance,
+      isLoadingBalance: false,
+      address: dappkitResponse.address,
+      Players: list,
+      manager: manag
+    });
+  }
+
   
-    // Wait for the Celo Wallet response
-    const dappkitResponse = await waitForAccountAuth(requestId)
-
-    // Set the default account to the account returned from the wallet
-    kit.defaultAccount = dappkitResponse.address
-
-    // Get the stabel token contract
-    const stableToken = await kit.contracts.getStableToken()
-
-    // Get the user account balance (cUSD)
-    const cUSDBalanceBig = await stableToken.balanceOf(kit.defaultAccount)
-    
-    // Convert from a big number to a string
-    let cUSDBalance = cUSDBalanceBig.toString()
-    
-    // Update state
-    this.setState({ cUSDBalance, 
-                    isLoadingBalance: false,
-                    address: dappkitResponse.address, 
-                    phoneNumber: dappkitResponse.phoneNumber })
-  }
-
-  read = async () => {
-    
-    // Read the name stored in the HelloWorld contract
-    let name = await this.state.helloWorldContract.methods.getName().call()
-    
-    // Update state
-    this.setState({ contractName: name })
-  }
-
-  write = async () => {
-    const requestId = 'update_name'
-    const dappName = 'Hello Celo'
-    const callback = Linking.makeUrl('/my/path')
-
-    // Create a transaction object to update the contract with the 'textInput'
-    const txObject = await this.state.helloWorldContract.methods.setName(this.state.textInput)
-
-    // Send a request to the Celo wallet to send an update transaction to the HelloWorld contract
-    requestTxSig(
-      kit,
-      [
+  joinlottery = async () => {
+    const requestId = "login";
+    const dappName = "Celo lottery";
+    const callback = Linking.makeUrl("/my/path");
+    const txObject = await this.state.Lottery.methods.enter()
+    await kit.sendTransactionObject(txObject, {from: this.state.address})
+    requestTxSig(kit,[
         {
           from: this.state.address,
-          to: this.state.helloWorldContract.options.address,
+          to: this.state.Lottery.options.address,
           tx: txObject,
+          value: 1000000000000000000,
           feeCurrency: FeeCurrency.cUSD
-        }
-      ],
+        }],
       { requestId, dappName, callback }
     )
-
-    // Get the response from the Celo wallet
     const dappkitResponse = await waitForSignedTxs(requestId)
     const tx = dappkitResponse.rawTxs[0]
-    
-    // Get the transaction result, once it has been included in the Celo blockchain
     let result = await toTxResult(kit.web3.eth.sendSignedTransaction(tx)).waitReceipt()
+    console.log(`transaction receipt: `, result)
+    let balance = await kit.web3.eth.getBalance(this.state.address)
+    balance = balance/10**18
+    let balancepool = await kit.web3.eth.getBalance(this.state.Lottery.options.address)
+    pool = balancepool/10**18
+    time = pool * 3600
+    const stableToken = await kit.contracts.getStableToken()
+    const cUSDBalanceBig = await stableToken.balanceOf(kit.defaultAccount)
+    let cUSDBalance = cUSDBalanceBig.toString()/10**18
+    this.setState({ cUSDBalance, celoBalance: balance, isLoadingBalance: false, pool: pool, totalDuration: time })
+  };
+  pickwinner = async () => {
+    const requestId = "winner";
+    const dappName = "Celo lottery";
+    const callback = Linking.makeUrl("/my/path");
+      const txObject = await this.state.Lottery.methods.pickwinner()
+      await kit.sendTransactionObject(txObject, {from: this.state.address})
+      requestTxSig(kit,[
+          {
+            from: this.state.address,
+            to: this.state.Lottery.options.address,
+            tx: txObject,
+            estimatedGas: 300000,
+            feeCurrency: FeeCurrency.cUSD
+          }],
+        { requestId, dappName, callback }
+      )
+      const dappkitResponse = await waitForSignedTxs(requestId)
+      const tx = dappkitResponse.rawTxs[0]
+      let result = await toTxResult(kit.web3.eth.sendSignedTransaction(tx)).waitReceipt()
+      console.log(`transaction receipt: `, result)
+      let balance = await kit.web3.eth.getBalance(this.state.address)
+      balance = balance/10**18
+      let pool = await kit.web3.eth.getBalance(this.state.Lottery.options.address)
+      pool = pool/10**18
+      const stableToken = await kit.contracts.getStableToken()
+      const cUSDBalanceBig = await stableToken.balanceOf(kit.defaultAccount)
+      let cUSDBalance = cUSDBalanceBig.toString()/10**18
+      this.setState({ cUSDBalance, celoBalance: balance, pool: pool, isLoadingBalance: false })
+   
+  };
 
-    console.log(`Hello World contract update transaction receipt: `, result)  
-  }
 
-  onChangeText = async (text) => {
-    this.setState({textInput: text})
-  }
-
-  render(){
+  render() {
     return (
       <View style={styles.container}>
-        <Image resizeMode='contain' source={require("./assets/white-wallet-rings.png")}></Image>
-        <Text>Open up client/App.js to start working on your app!</Text>
-        
-        <Text style={styles.title}>Login first</Text>
-        <Button title="login()" 
-          onPress={()=> this.login()} />
-                <Text style={styles.title}>Account Info:</Text>
-        <Text>Current Account Address:</Text>
-        <Text>{this.state.address}</Text>
-        <Text>Phone number: {this.state.phoneNumber}</Text>
-        <Text>cUSD Balance: {this.state.cUSDBalance}</Text>
-
-        <Text style={styles.title}>Read HelloWorld</Text>
-        <Button title="Read Contract Name" 
-          onPress={()=> this.read()} />
-        <Text>Contract Name: {this.state.contractName}</Text>
-        
-        <Text style={styles.title}>Write to HelloWorld</Text>
-        <Text>New contract name:</Text>
-        <TextInput
-          style={{  borderColor: 'black', borderWidth: 1, backgroundColor: 'white' }}
-          placeholder="input new name here"
-          onChangeText={text => this.onChangeText(text)}
-          value={this.state.textInput}
-          />
-        <Button style={{padding: 30}} title="update contract name" 
-          onPress={()=> this.write()} />
+        <View style={styles.buttonContainer}>
+          <Button onPress={()=> this.login()} title="Connect to update state" />
+        </View>
+        <View style={styles.button}>
+          <Text>player: {this.state.address}</Text>
+          <Text>Balance: {this.state.cUSDBalance}</Text>
+          <Text>Celo : {this.state.celoBalance}</Text>
+          <Text>Pool to win: {this.state.pool} Celo</Text>
+          <Text>Manager: {this.state.manager}</Text>
+        </View>
+        <ScrollView style={styles.scrollView}>
+          <View style={styles.title}>
+            <Text style={styles.title}>Celo Lottery </Text>
+            <Text style={styles.baseText}>
+              Join the lottery by depositing 1 Celo. the countdown will start if
+              10 members joined the lottery.
+            </Text>
+            <Image style={{resizeMode: 'center',height: 100,width: 200,}} source={require("./assets/logo.png")}></Image>
+            <Button title="Join" onPress={()=> this.joinlottery()} />
+            <Text>countdown:</Text>
+            <View style={{ flex: 1, justifyContent: 'center' }}>
+              <CountDown
+                until={this.state.totalDuration}
+                timetoShow={('M', 'S')}
+                
+                size={20}
+              />
+            </View>
+            <Text>Players: {this.state.Players}</Text>
+            <Button title="pick the winner" onPress={()=> this.pickwinner()} />
+          </View>
+        </ScrollView>
       </View>
     );
   }
 }
 
 const styles = StyleSheet.create({
+  buttonContainer: {
+    margin: 20,
+    borderRadius: 4,
+    backgroundColor: "#841584",
+  },
+  button: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 4,
+    backgroundColor: "oldlace",
+    alignSelf: "flex-start",
+    marginHorizontal: "1%",
+    marginBottom: 6,
+    minWidth: "48%",
+    textAlign: "center",
+  },
   container: {
+    marginTop: 20,
     flex: 1,
-    backgroundColor: '#35d07f',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#1769aa",
+    justifyContent: "center",
+  },
+  baseText: {
+    margin: 5,
+    textAlign: "center",
+    fontSize: 15,
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: "#1769aa",
   },
   title: {
-    marginVertical: 8, 
-    fontSize: 20, 
-    fontWeight: 'bold'
-  }
+    fontSize: 20,
+    textAlign: "center",
+    fontWeight: "bold",
+  },
+  logo: {
+    width: 66,
+    height: 58,
+  },
 });

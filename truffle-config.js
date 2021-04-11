@@ -40,5 +40,10 @@ module.exports = {
       provider: kit.web3.currentProvider,
       network_id: 42220
     }
+  },
+  compilers: {
+    solc: {
+      version: "0.4.21", 
+    }
   }
 };
